@@ -1,0 +1,7 @@
+archive/
+archive.zip
+create_report.py
+*.pkl
+*.pth
+__pycache__/
+.ipynb_checkpoints/
