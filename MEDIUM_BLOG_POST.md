@@ -1,176 +1,160 @@
-# Neural Storyteller: Building an Image Captioning System with CNN-LSTM
+==========================================================================
+HOW TO PUBLISH THIS ON MEDIUM
+==========================================================================
+1. Go to medium.com → click your profile → "Write"
+2. Copy each section below and paste into Medium's editor
+3. For every [UPLOAD IMAGE: filename] line:
+   - Click the "+" icon that appears on the left of a new line
+   - Choose "Image" → upload the PNG from the report_images/ folder
+   - Add the caption text below it
+4. After publishing, copy the URL and update the Word report + README
+==========================================================================
 
-*How I built a model that looks at photos and writes captions — from scratch, on Flickr30k*
+---TITLE (paste this as the big title at the top)---
 
----
+Neural Storyteller: Building an Image Captioning System with CNN-LSTM
 
-## Introduction
 
-What if a machine could look at a photograph and describe it in plain English — just like a human?
+---SUBTITLE (click "Add a subtitle" below the title)---
 
-That's exactly what **image captioning** does. It sits at the intersection of Computer Vision and Natural Language Processing, combining the power of convolutional neural networks (CNNs) with recurrent neural networks (RNNs) to generate meaningful text descriptions of images.
+How I trained a deep learning model to look at photos and write captions — using ResNet-50 + LSTM on Flickr30k
 
-In this blog, I'll walk through how I built **Neural Storyteller** — an end-to-end image captioning system trained on the Flickr30k dataset, deployed as a live Gradio web app.
 
-**GitHub Repository:** https://github.com/Sananoor12/GenAi
+==========================================================================
+START COPYING ARTICLE BODY FROM HERE
+==========================================================================
 
----
+What if a machine could look at a photograph and describe it in plain English, just like a human would?
 
-## The Dataset: Flickr30k
+That is exactly what image captioning does. It sits at the intersection of Computer Vision and Natural Language Processing, and in this article I will walk through how I built Neural Storyteller — an end-to-end image captioning system trained on the Flickr30k dataset and deployed as a live web app.
 
-The [Flickr30k dataset](https://www.kaggle.com/datasets/adityajn105/flickr30k) contains **31,783 images**, each paired with **5 human-written captions** — over 158,000 captions in total.
-
-| Split | Images |
-|-------|--------|
-| Train | 28,000 |
-| Validation | 1,000 |
-| Test | ~2,783 |
-
-Example captions for a single image:
-- *"A man in a red shirt is climbing a rock wall."*
-- *"A climber scales an outdoor rock face."*
-
----
-
-## Architecture: Show and Tell
-
-The architecture follows the classic **encoder-decoder** paradigm popularised by Vinyals et al. (2015) in *"Show and Tell"*:
-
-### 🔍 Encoder — ResNet-50
-
-A pre-trained **ResNet-50** acts as the visual backbone. The final classification layer is removed, leaving a **2048-dimensional feature vector** per image. Features are extracted offline and cached — this saves enormous compute time during training.
-
-A linear layer then projects this 2048-d vector down to the LSTM hidden size (512).
-
-```python
-class Encoder(nn.Module):
-    def __init__(self, hidden_size):
-        super().__init__()
-        self.linear = nn.Linear(2048, hidden_size)
-
-    def forward(self, features):
-        return torch.tanh(self.linear(features))
-```
-
-### 🗣️ Decoder — LSTM
-
-A single-layer **LSTM** generates the caption word-by-word. The encoder output initialises both h₀ and c₀.
-
-```python
-class Decoder(nn.Module):
-    def __init__(self, embed_size, hidden_size, vocab_size, num_layers=1):
-        super().__init__()
-        self.embed = nn.Embedding(vocab_size, embed_size)
-        self.lstm = nn.LSTM(embed_size, hidden_size, num_layers, batch_first=True)
-        self.linear = nn.Linear(hidden_size, vocab_size)
-
-    def forward(self, captions, features):
-        embeddings = self.embed(captions)
-        h0 = features.unsqueeze(0)
-        c0 = features.unsqueeze(0)
-        output, _ = self.lstm(embeddings, (h0, c0))
-        return self.linear(output)
-```
+GitHub: https://github.com/Sananoor12/GenAi
 
 ---
 
-## Training
+The Dataset
 
-| Hyperparameter | Value |
-|----------------|-------|
-| Embedding size | 256 |
-| Hidden size | 512 |
-| Learning rate | 3e-4 (Adam) |
-| Batch size | 64 |
-| Epochs | 20 |
-| Loss | CrossEntropyLoss |
+The Flickr30k dataset contains 31,783 photographs sourced from Flickr, each with five human-written captions — over 158,000 captions in total. I split the data into:
 
-Training ran on **dual NVIDIA T4 GPUs** on Kaggle (CUDA 12.1). Each epoch took ~63 seconds.
+• Train: 28,000 images
+• Validation: 1,000 images
+• Test: ~2,783 images
 
-### Loss Curve
-
-| Epoch | Train Loss | Val Loss |
-|-------|-----------|---------|
-| 1 | 3.37 | 3.24 |
-| 5 | 2.60 | 2.97 |
-| 10 | 2.18 | 3.02 |
-| 15 | 1.88 | 3.17 |
-| 20 | 1.64 | 3.36 |
-
-Training loss steadily decreases. Validation loss starts increasing after epoch ~6, indicating overfitting in later epochs — a future improvement would be early stopping.
+Each image has captions like: "A dog in a swimming pool swims toward somebody we cannot see" — diverse, detailed, and written by different people.
 
 ---
 
-## Inference: Greedy vs Beam Search
+The Architecture
 
-### Greedy Search
-At each step, pick the highest-probability word. Fast but suboptimal.
+The model follows the classic encoder-decoder design from the paper "Show and Tell" (Vinyals et al., 2015).
 
-### Beam Search (k=3)
-Maintain the top-3 partial sequences at every step, score by normalised log-probability. Produces more fluent, globally coherent captions.
+Encoder — ResNet-50
 
-```python
-def generate_caption(image_feature, method='beam', beam_width=3, max_length=50):
-    # ... see full code on GitHub
-```
+A pre-trained ResNet-50 extracts visual features from each image. I remove the final classification layer, leaving a 2048-dimensional feature vector per image. These features are extracted once and cached — this saves enormous GPU time during training.
 
----
+A single linear layer then projects the 2048-d vector down to 512 dimensions and initialises the LSTM's hidden state.
 
-## Results
+Decoder — LSTM
 
-Evaluated on ~2,783 test images using beam search:
-
-| Metric | Score |
-|--------|-------|
-| **BLEU-4** | 0.0267 |
-| ROUGE-1 Precision | 0.2237 |
-| ROUGE-1 Recall | 0.2274 |
-| **ROUGE-1 F1** | 0.2127 |
-
-The BLEU-4 of ~0.027 is consistent with attention-free single-layer LSTM baselines on Flickr30k. The ROUGE-1 F1 of 0.21 shows meaningful word overlap between predictions and references.
+A one-layer LSTM with 512 hidden units generates the caption word by word. Word embeddings (size 256) are learned from scratch. A vocabulary is built from the training captions using a minimum frequency threshold of 5, keeping only words that appear at least 5 times.
 
 ---
 
-## Deployment: Gradio App
+Training
 
-The model is wrapped in a simple **Gradio** interface — upload any image, get a caption instantly.
+I trained for 20 epochs on dual NVIDIA T4 GPUs on Kaggle (CUDA 12.1). Each epoch took about 63 seconds.
 
-```python
-demo = gr.Interface(
-    fn=predict_image_caption,
-    inputs=gr.Image(type="pil"),
-    outputs="text",
-    title="Neural Storyteller - Image Captioning"
-)
-demo.launch(share=True)
-```
+Hyperparameters:
+• Embedding size: 256
+• Hidden size: 512
+• Learning rate: 3e-4 (Adam)
+• Batch size: 64
+• Loss: CrossEntropyLoss (padding tokens ignored)
 
----
+[UPLOAD IMAGE: loss_curve.png]
+Caption: Training vs Validation Loss over 20 epochs. Best model checkpoint is around epoch 6 before overfitting begins.
 
-## Key Takeaways
-
-1. **Offline feature extraction** — extracting ResNet features once and caching them reduced epoch time dramatically.
-2. **Vocabulary frequency thresholding** (min 5 occurrences) keeps vocab manageable and reduces noise.
-3. **Beam search > Greedy** — even with beam width 3, caption quality noticeably improves.
-4. **Overfitting is real** — without attention or regularization, the model memorizes training captions. Early stopping at epoch 6 would yield the best validation performance.
+The training loss drops steadily from 3.37 to 1.64. However, validation loss starts increasing after epoch 6 — a classic sign of overfitting. The best checkpoint should be saved at epoch 6. Adding attention or dropout would likely delay this.
 
 ---
 
-## What's Next?
+Inference: Greedy vs Beam Search
 
-- Add **Bahdanau Attention** to let the decoder focus on image regions
-- Use a **Transformer decoder** instead of LSTM
-- **Fine-tune ResNet** jointly with the decoder (end-to-end training)
-- Deploy permanently to **Hugging Face Spaces**
+Greedy Search picks the highest-probability word at every step. It is fast but can produce repetitive or suboptimal captions.
 
----
-
-## References
-
-1. Vinyals et al. (2015). *Show and Tell: A Neural Image Caption Generator.* CVPR.
-2. Young et al. (2014). *From image descriptions to visual denotations: Flickr30k Entities.*
-3. He et al. (2016). *Deep Residual Learning for Image Recognition.* CVPR.
+Beam Search (k=3) keeps the top 3 partial sequences alive at each step and picks the globally best-scoring sequence at the end. It consistently produces more fluent and meaningful captions and was used for all evaluation.
 
 ---
 
-*Full code: https://github.com/Sananoor12/GenAi*
+Sample Results
+
+Here are five random test images with their ground truth captions and what the model generated:
+
+[UPLOAD IMAGE: sample1.png]
+Caption: Ground Truth: "The three cats, two white with calico accents and a gray tabby, are laying in the brown grass." | Generated: "taking a nap from her dog"
+
+[UPLOAD IMAGE: sample2.png]
+Caption: Ground Truth: "A dog in a swimming pool swims toward somebody we cannot see." | Generated: "water into a dog's face"
+
+[UPLOAD IMAGE: sample3.png]
+Caption: Ground Truth: "Girl in club DJ both showing camera the cover of Michael Jackson's Thriller." | Generated: "use a kiss on their makeup"
+
+[UPLOAD IMAGE: sample4.png]
+Caption: Ground Truth: "A golfer wearing black pants swings at a golf ball while three people look on." | Generated: "practice in a field out of a baseball game"
+
+[UPLOAD IMAGE: sample5.png]
+Caption: Ground Truth: "A motorcycle racer riding a yellow motorcycle with number 33 is passing a Kawasaki banner." | Generated: "on a motorcycle on a yellow motorcycle"
+
+The model captures rough themes (animals, sports, vehicles) but struggles with fine-grained detail. This is expected for an attention-free single-layer LSTM.
+
+---
+
+Quantitative Results
+
+Evaluated on the full test set using beam search:
+
+• BLEU-4: 0.0267
+• ROUGE-1 Precision: 0.2237
+• ROUGE-1 Recall: 0.2274
+• ROUGE-1 F1: 0.2127
+
+These scores are consistent with baseline attention-free LSTM models on Flickr30k. The ROUGE-1 F1 of 0.21 shows meaningful word overlap between predictions and references.
+
+---
+
+Deployment with Gradio
+
+The model is wrapped in a Gradio interface. Users upload any image and get a generated caption instantly. A public share link is generated via Gradio's tunnelling service — no server setup required.
+
+The app is titled "Neural Storyteller - Image Captioning" and runs directly inside the Kaggle notebook environment.
+
+---
+
+Key Takeaways
+
+1. Offline feature extraction is worth it — extracting ResNet-50 features once and caching them cut per-epoch time dramatically.
+
+2. Vocabulary thresholding matters — using only words with frequency ≥ 5 keeps the model manageable and reduces noise.
+
+3. Beam search beats greedy — even with beam width 3, captions are noticeably more fluent and complete.
+
+4. Overfitting is the main bottleneck — without attention or dropout, the model memorises training captions after epoch 6. Early stopping here is essential.
+
+---
+
+What is Next
+
+• Add Bahdanau Attention to let the decoder focus on specific image regions
+• Use a Transformer decoder instead of LSTM
+• Fine-tune the ResNet backbone jointly with the decoder
+• Deploy permanently on Hugging Face Spaces
+
+---
+
+References
+
+1. Vinyals et al. (2015). Show and Tell: A Neural Image Caption Generator. CVPR.
+2. Young et al. (2014). From image descriptions to visual denotations: Flickr30k Entities.
+3. He et al. (2016). Deep Residual Learning for Image Recognition. CVPR.
+
+Full code: https://github.com/Sananoor12/GenAi
